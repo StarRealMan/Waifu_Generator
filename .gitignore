@@ -133,6 +133,7 @@ dmypy.json
 *.code-workspace
 /app/*.ipynb
 /data
+/trained_model
 /log
 /.ipynb_checkpoints
 /model/*.pt
