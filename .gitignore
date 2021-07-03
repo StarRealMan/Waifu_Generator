@@ -137,3 +137,4 @@ dmypy.json
 /log
 /.ipynb_checkpoints
 /model/*.pt
+/output

@@ -1,88 +1,81 @@
+import random
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-import torch.autograd as autograd
-import numpy as np
-import cv2
 
-class WaifuNet_Generator(nn.Module):
+# custom weights initialization called on netG and netD
+def weights_init(m):
+    classname = m.__class__.__name__
+    if classname.find('Conv') != -1:
+        torch.nn.init.normal_(m.weight, 0.0, 0.02)
+    elif classname.find('BatchNorm') != -1:
+        torch.nn.init.normal_(m.weight, 1.0, 0.02)
+        torch.nn.init.zeros_(m.bias)
 
-    def __init__(self):
 
-        super(WaifuNet_Generator, self).__init__()
+class Generator(nn.Module):
+    def __init__(self, ngpu, nz, nc, ngf):
+        super(Generator, self).__init__()
+        self.ngpu = ngpu
         self.main = nn.Sequential(
-            nn.ConvTranspose2d(100, 512, 4, 1, 0, bias=False),  # 100 x 1 x 1
-            nn.BatchNorm2d(512),
+            # input is Z, going into a convolution
+            nn.ConvTranspose2d(     nz, ngf * 8, 4, 1, 0, bias=False),
+            nn.BatchNorm2d(ngf * 8),
             nn.ReLU(True),
-            nn.ConvTranspose2d(512, 256, 4, 2, 1, bias=False),  # 512 x 4 x 4
-            nn.BatchNorm2d(256),
+            # state size. (ngf*8) x 4 x 4
+            nn.ConvTranspose2d(ngf * 8, ngf * 4, 4, 2, 1, bias=False),
+            nn.BatchNorm2d(ngf * 4),
             nn.ReLU(True),
-            nn.ConvTranspose2d(256, 256, 4, 2, 1, bias=False),  # 256 x 8 x 8
-            nn.BatchNorm2d(256),
+            # state size. (ngf*4) x 8 x 8
+            nn.ConvTranspose2d(ngf * 4, ngf * 2, 4, 2, 1, bias=False),
+            nn.BatchNorm2d(ngf * 2),
             nn.ReLU(True),
-            # state size. 
-            nn.ConvTranspose2d(256, 128, 4, 2, 1, bias=False),  # 256 x 16 x 16
-            nn.BatchNorm2d(128),
+            # state size. (ngf*2) x 16 x 16
+            nn.ConvTranspose2d(ngf * 2,     ngf, 4, 2, 1, bias=False),
+            nn.BatchNorm2d(ngf),
             nn.ReLU(True),
-            nn.ConvTranspose2d(128, 128, 4, 2, 1, bias=False),  # 128 x 32 x 32
-            nn.BatchNorm2d(128),
-            nn.ReLU(True),
-            nn.ConvTranspose2d(128, 64, 4, 2, 1, bias=False),   # 128 x 64 x 64
-            nn.BatchNorm2d(64),
-            nn.ReLU(True),
-            nn.ConvTranspose2d(64, 3, 4, 2, 1, bias=False),     # 64 x 128 x 128
-            nn.Tanh()                                           # 3 x 256 x 256
+            # state size. (ngf) x 32 x 32
+            nn.ConvTranspose2d(    ngf,      nc, 4, 2, 1, bias=False),
+            nn.Tanh()
+            # state size. (nc) x 64 x 64
         )
-    
-    def forward(self, x):
-        
-        return self.main(x)
 
-class WaifuNet_Discriminator(nn.Module):
+    def forward(self, input):
+        if input.is_cuda and self.ngpu > 1:
+            output = nn.parallel.data_parallel(self.main, input, range(self.ngpu))
+        else:
+            output = self.main(input)
+        return output
 
-    def __init__(self):
 
-        super(WaifuNet_Discriminator, self).__init__()
+class Discriminator(nn.Module):
+    def __init__(self, ngpu, nc , ndf):
+        super(Discriminator, self).__init__()
+        self.ngpu = ngpu
         self.main = nn.Sequential(
-            nn.Conv2d(3, 64, 4, 2, 1, bias=False),      # 3 x 256 x 256
+            # input is (nc) x 64 x 64
+            nn.Conv2d(nc, ndf, 4, 2, 1, bias=False),
             nn.LeakyReLU(0.2, inplace=True),
-            nn.Conv2d(64, 128, 4, 2, 1, bias=False),    # 64 x 128 x 128
-            nn.BatchNorm2d(128),
+            # state size. (ndf) x 32 x 32
+            nn.Conv2d(ndf, ndf * 2, 4, 2, 1, bias=False),
+            nn.BatchNorm2d(ndf * 2),
             nn.LeakyReLU(0.2, inplace=True),
-            nn.Conv2d(128, 128, 4, 2, 1, bias=False),   # 128 x 64 x 64
-            nn.BatchNorm2d(128),
+            # state size. (ndf*2) x 16 x 16
+            nn.Conv2d(ndf * 2, ndf * 4, 4, 2, 1, bias=False),
+            nn.BatchNorm2d(ndf * 4),
             nn.LeakyReLU(0.2, inplace=True),
-            nn.Conv2d(128, 256, 4, 2, 1, bias=False),   # 128 x 32 x 32
-            nn.BatchNorm2d(256),
+            # state size. (ndf*4) x 8 x 8
+            nn.Conv2d(ndf * 4, ndf * 8, 4, 2, 1, bias=False),
+            nn.BatchNorm2d(ndf * 8),
             nn.LeakyReLU(0.2, inplace=True),
-            nn.Conv2d(256, 256, 4, 2, 1, bias=False),   # 256 x 16 x 16
-            nn.BatchNorm2d(256),
-            nn.LeakyReLU(0.2, inplace=True),
-            nn.Conv2d(256, 512, 4, 2, 1, bias=False),   # 256 x 8 x 8
-            nn.BatchNorm2d(512),
-            nn.LeakyReLU(0.2, inplace=True),
-            nn.Conv2d(512, 1, 4, 1, 0, bias=False),     # 512 x 4 x 4
-            nn.Sigmoid()                                # 1 x 256 x 256
+            # state size. (ndf*8) x 4 x 4
+            nn.Conv2d(ndf * 8, 1, 4, 1, 0, bias=False),
+            nn.Sigmoid()
         )
-    
-    def forward(self, x):
-        
-        return self.main(x)
 
-if __name__ == '__main__':
+    def forward(self, input):
+        if input.is_cuda and self.ngpu > 1:
+            output = nn.parallel.data_parallel(self.main, input, range(self.ngpu))
+        else:
+            output = self.main(input)
 
-    Dnet = WaifuNet_Discriminator()
-    print(Dnet)
-    rand = torch.randn(2, 3, 256, 256)
-    output = Dnet(rand)
-    print(output.shape)
-
-    Gnet = WaifuNet_Generator()
-    print(Gnet)
-    rand = torch.randn(2, 100, 1, 1)
-    output = Gnet(rand).detach().numpy()
-    
-    # cv2.imshow("gen", output[1].transpose((1, 2, 0)))
-    # cv2.waitKey(0)
-    # print(output.shape)
-    
+        return output.view(-1, 1).squeeze(1)
