@@ -136,5 +136,5 @@ dmypy.json
 /trained_model
 /log
 /.ipynb_checkpoints
-/model/*.pt
+/model/*.pth
 /output

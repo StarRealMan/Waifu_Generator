@@ -12,6 +12,7 @@ import torch.utils.data
 import torchvision.utils as vutils
 sys.path.append("..")
 from model import WaifuNet
+from model import originDCGAN
 from app import dataloader
 
 parser = argparse.ArgumentParser()
@@ -29,7 +30,7 @@ parser.add_argument('--cuda', action='store_true', help='enables cuda')
 parser.add_argument('--ngpu', type=int, default=1, help='number of GPUs to use')
 parser.add_argument('--netG', default='', help="path to netG (to continue training)")
 parser.add_argument('--netD', default='', help="path to netD (to continue training)")
-parser.add_argument('--outf', default='.', help='folder to output images and model checkpoints')
+parser.add_argument('--outf', default='../output', help='folder to output images and model checkpoints')
 parser.add_argument('--manualSeed', type=int, help='manual seed')
 
 opt = parser.parse_args()
@@ -54,19 +55,21 @@ ngpu = int(opt.ngpu)
 nz = int(opt.nz)
 ngf = int(opt.ngf)
 ndf = int(opt.ndf)
-nc=3
+nc = 3
 
 myDataset = dataloader.myDataset(opt.dataroot, opt.imageSize, opt.workers, opt.batchSize)
 myDataloader = myDataset.get_dataloader()
 
 netG = WaifuNet.Generator(ngpu, nz, nc, ngf).to(device)
-netG.apply(WaifuNet.weights_init)
+# netG = originDCGAN.Generator(ngpu, nz, nc, ngf).to(device)
+netG.apply(originDCGAN.weights_init)
 if opt.netG != '':
     netG.load_state_dict(torch.load(opt.netG))
 print(netG)
 
 netD = WaifuNet.Discriminator(ngpu, nc, ngf).to(device)
-netD.apply(WaifuNet.weights_init)
+# netD = originDCGAN.Discriminator(ngpu, nc, ngf).to(device)
+netD.apply(originDCGAN.weights_init)
 if opt.netD != '':
     netD.load_state_dict(torch.load(opt.netD))
 print(netD)
@@ -131,12 +134,12 @@ for epoch in range(opt.niter):
             vutils.save_image(fake.detach(),
                     '%s/fake_samples_epoch_%03d.png' % (opt.outf, epoch),
                     normalize=True)
-
-    # do checkpointing
-    torch.save(netG.state_dict(), '%s/netG_epoch_%d.pth' % (opt.outf, epoch))
-    torch.save(netD.state_dict(), '%s/netD_epoch_%d.pth' % (opt.outf, epoch))
+    if (epoch % 10 == 0 and epoch != 0) or epoch == opt.niter - 1:
+        # do checkpointing
+        torch.save(netG.state_dict(), '%s/netG_epoch_%d.pth' % (opt.outf, epoch))
+        torch.save(netD.state_dict(), '%s/netD_epoch_%d.pth' % (opt.outf, epoch))
 
 # Usage : python3 trainer.py
 #                            --dataroot ~/Pytorch_DEV/Waifu_Generator/data/waifu_2x/
-#                            --outf ../../Waifu_Generator/log/
-#                            --cuda --workers 8 
+#                            --outf ../../Waifu_Generator/output/
+#                            --cuda --workers 8
